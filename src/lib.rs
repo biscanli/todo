@@ -72,11 +72,27 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
   match &args.command {
     Some(Commands::Add { body }) => add(body.to_string(), conn)?,
     Some(Commands::Rm { id }) => rm(*id, conn)?,
+    Some(Commands::Check { id }) => check(*id, conn)?,
     Some(Commands::List { all }) => list(*all, conn)?,
     _ => {}
   }
 
   Ok(())
+}
+
+fn find_target(id: usize, conn: &Connection) -> Result<usize, Box<dyn Error>> {
+  let mut stmt = conn.prepare("SELECT * FROM todos;")?;
+  let todos = stmt
+    .query_map([], |row| {
+      Ok(Todo {
+        id: row.get(0)?,
+        body: row.get(1)?,
+        incomplete: row.get(2)?,
+      })
+    })?
+    .collect::<Vec<Result<Todo>>>();
+
+  Ok(todos[id - 1].as_ref().unwrap().id)
 }
 
 fn add(todo: String, conn: Connection) -> Result<(), Box<dyn Error>> {
@@ -89,25 +105,28 @@ fn add(todo: String, conn: Connection) -> Result<(), Box<dyn Error>> {
 }
 
 fn rm(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let mut stmt = conn.prepare("SELECT * FROM todos;")?;
-  let todos = stmt
-    .query_map([], |row| {
-      Ok(Todo {
-        id: row.get(0)?,
-        body: row.get(1)?,
-        incomplete: row.get(2)?,
-      })
-    })?
-    .collect::<Vec<Result<Todo>>>();
-
-  let target = &todos[id - 1].as_ref().unwrap().id;
+  let target = find_target(id, &conn).unwrap();
   conn.execute("delete from todos where id is ?1", (target,))?;
   println!("Removed todo: {}", id);
   Ok(())
 }
 
+fn check(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
+  let target = find_target(id, &conn).unwrap();
+  conn.execute(
+    "UPDATE todos SET incomplete = false where id is ?1",
+    (target,),
+  )?;
+  println!("Done: {}", id);
+  Ok(())
+}
+
 fn list(all: bool, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let mut stmt = conn.prepare("SELECT * FROM todos where incomplete;")?;
+  let mut stmt = conn.prepare(if all {
+    "SELECT * FROM todos;"
+  } else {
+    "SELECT * FROM todos where incomplete;"
+  })?;
   let todos = stmt.query_map([], |row| {
     Ok(Todo {
       id: row.get(0)?,
@@ -119,9 +138,7 @@ fn list(all: bool, conn: Connection) -> Result<(), Box<dyn Error>> {
   println!("Things you still need to do:");
   for (number, todo) in todos.enumerate() {
     if let Ok(found_todo) = todo {
-      if all || found_todo.incomplete {
-        println!("{}. {}", number + 1, found_todo.body,);
-      }
+      println!("{}. {}", number + 1, found_todo.body,);
     }
   }
   Ok(())
