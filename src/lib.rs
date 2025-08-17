@@ -57,9 +57,34 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
   // Parse the args
   match &args.command {
     Some(Commands::Add { todos }) => add(todos.to_vec(), conn)?,
-    Some(Commands::Rm {}) => rm(conn)?,
-    Some(Commands::Toggle {}) => toggle(conn)?,
-    Some(Commands::Edit {}) => edit(conn)?,
+    Some(Commands::Rm {}) => {
+      let targets = match multi_find(&conn) {
+        Ok(result) => result,
+        _ => panic!("Something went wrong with selection!"),
+      };
+      rm(targets, conn)?;
+    }
+    Some(Commands::Toggle {}) => {
+      let targets = match multi_find(&conn) {
+        Ok(result) => result,
+        _ => panic!("Something went wrong with selection!"),
+      };
+      toggle(targets, conn)?;
+    }
+    Some(Commands::Edit {}) => {
+      let target = match fuzzy_find(&conn) {
+        Ok(result) => result,
+        _ => panic!("Something went wrong with selection!"),
+      };
+      if let Some(new) = Editor::new()
+        .edit(&target.body)
+        .expect("Editor had issues!")
+      {
+        edit(target, new, conn)?;
+      } else {
+        println!("Empty todo is not acceptable!");
+      }
+    }
     Some(Commands::List { incomplete: all }) => list(*all, conn)?,
     _ => {}
   }
@@ -162,11 +187,7 @@ fn add(todos: Vec<String>, conn: Connection) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn rm(conn: Connection) -> Result<(), Box<dyn Error>> {
-  let targets = match multi_find(&conn) {
-    Ok(result) => result,
-    _ => panic!("Something went wrong with selection!"),
-  };
+fn rm(targets: Vec<Todo>, conn: Connection) -> Result<(), Box<dyn Error>> {
   for target in targets {
     conn.execute("delete from todos where body is ?1", (&target.body,))?;
     println!("Removed todo: {}", target.body);
@@ -174,11 +195,7 @@ fn rm(conn: Connection) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn toggle(conn: Connection) -> Result<(), Box<dyn Error>> {
-  let targets = match multi_find(&conn) {
-    Ok(result) => result,
-    _ => panic!("Something went wrong with selection!"),
-  };
+fn toggle(targets: Vec<Todo>, conn: Connection) -> Result<(), Box<dyn Error>> {
   for target in targets {
     let flipped = if target.incomplete { false } else { true };
     conn.execute(
@@ -190,23 +207,12 @@ fn toggle(conn: Connection) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn edit(conn: Connection) -> Result<(), Box<dyn Error>> {
-  let target = match fuzzy_find(&conn) {
-    Ok(result) => result,
-    _ => panic!("Something went wrong with selection!"),
-  };
-  if let Some(new) = Editor::new()
-    .edit(&target.body)
-    .expect("Editor had issues!")
-  {
-    conn.execute(
-      "UPDATE todos SET body = ?1 where id is ?2",
-      (&new, target.id),
-    )?;
-    println!("Updated to: {}", new);
-  } else {
-    println!("Empty todo is not acceptable!");
-  }
+fn edit(target: Todo, new: String, conn: Connection) -> Result<(), Box<dyn Error>> {
+  conn.execute(
+    "UPDATE todos SET body = ?1 where id is ?2",
+    (&new, target.id),
+  )?;
+  println!("Updated to: {}", new);
   Ok(())
 }
 
