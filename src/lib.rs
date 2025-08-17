@@ -1,6 +1,7 @@
 use clap::Parser;
 use clap::Subcommand;
 use console::style;
+use dialoguer::{theme::ColorfulTheme, Input};
 use rusqlite::{Connection, Result};
 use std::error::Error;
 
@@ -37,9 +38,6 @@ enum Commands {
   Edit {
     // The todo number to remove
     id: usize,
-
-    // The new string to replace with
-    new: String,
   },
 
   /// Check a todo app
@@ -74,7 +72,7 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
     Some(Commands::Add { body }) => add(body.to_string(), conn)?,
     Some(Commands::Rm { id }) => rm(*id, conn)?,
     Some(Commands::Toggle { id }) => toggle(*id, conn)?,
-    Some(Commands::Edit { id, new }) => edit(*id, new.to_string(), conn)?,
+    Some(Commands::Edit { id }) => edit(*id, conn)?,
     Some(Commands::List { incomplete: all }) => list(*all, conn)?,
     _ => {}
   }
@@ -135,9 +133,29 @@ fn toggle(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn edit(id: usize, new: String, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let target = find_target(id, &conn).unwrap();
-  conn.execute("UPDATE todos SET body = ?1 where id is ?2", (new, target))?;
+fn edit(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
+  let mut stmt = conn.prepare("SELECT * FROM todos;")?;
+  let todos = stmt
+    .query_map([], |row| {
+      Ok(Todo {
+        id: row.get(0)?,
+        body: row.get(1)?,
+        incomplete: row.get(2)?,
+      })
+    })?
+    .collect::<Vec<Result<Todo>>>();
+
+  let target = todos[id - 1].as_ref().unwrap();
+  let prompt = format!("Change from '{}': ", (target.body));
+  let new: String = Input::with_theme(&ColorfulTheme::default())
+    .with_prompt(prompt)
+    .interact_text()
+    .unwrap();
+
+  conn.execute(
+    "UPDATE todos SET body = ?1 where id is ?2",
+    (new, target.id),
+  )?;
   println!("Updated: {}", id);
   Ok(())
 }

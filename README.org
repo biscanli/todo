@@ -1,7 +1,7 @@
-* Features [2/6]
+* Features [4/6]
 - [X] Add, remove, list
 - [X] Check todo
-- [ ] Uncheck
-- [ ] Edit
+- [X] Toggle (check/uncheck)
+- [X] Edit
 - [ ] Add extra args to list
 - [ ] Add interactive remove
