@@ -1,10 +1,11 @@
 use clap::Parser;
 use clap::Subcommand;
 use console::style;
-use dialoguer::{theme::ColorfulTheme, Input};
+use dialoguer::{theme::ColorfulTheme, FuzzySelect, Input};
 use rusqlite::{Connection, Result};
 use std::error::Error;
 
+#[derive(Clone)]
 struct Todo {
   body: String,
   id: usize,
@@ -29,10 +30,7 @@ enum Commands {
   },
 
   /// Remove todo
-  Rm {
-    // The todo number to remove
-    id: usize,
-  },
+  Rm {},
 
   /// Edit todo
   Edit {
@@ -70,7 +68,7 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
   // Parse the args
   match &args.command {
     Some(Commands::Add { body }) => add(body.to_string(), conn)?,
-    Some(Commands::Rm { id }) => rm(*id, conn)?,
+    Some(Commands::Rm {}) => rm(conn)?,
     Some(Commands::Toggle { id }) => toggle(*id, conn)?,
     Some(Commands::Edit { id }) => edit(*id, conn)?,
     Some(Commands::List { incomplete: all }) => list(*all, conn)?,
@@ -80,7 +78,7 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn find_target(id: usize, conn: &Connection) -> Result<usize, Box<dyn Error>> {
+fn find_target(id: usize, conn: &Connection) -> Result<Todo, Box<dyn Error>> {
   let mut stmt = conn.prepare("SELECT * FROM todos;")?;
   let todos = stmt
     .query_map([], |row| {
@@ -92,7 +90,26 @@ fn find_target(id: usize, conn: &Connection) -> Result<usize, Box<dyn Error>> {
     })?
     .collect::<Vec<Result<Todo>>>();
 
-  Ok(todos[id - 1].as_ref().unwrap().id)
+  Ok(todos[id - 1].as_ref().unwrap().clone())
+}
+
+fn fuzzy_find(conn: &Connection) -> Result<String, Box<dyn Error>> {
+  let mut stmt = conn.prepare("SELECT * FROM todos;")?;
+  let todos = stmt
+    .query_map([], |row| Ok(row.get(1)?))?
+    .into_iter()
+    .filter(|s| s.is_ok())
+    .map(|s| s.unwrap())
+    .collect::<Vec<String>>();
+
+  let target_id = FuzzySelect::with_theme(&ColorfulTheme::default())
+    .with_prompt("Which one to erase?")
+    .default(0)
+    .items(&todos[..])
+    .interact()
+    .unwrap();
+
+  Ok(todos[target_id].clone())
 }
 
 fn add(todo: String, conn: Connection) -> Result<(), Box<dyn Error>> {
@@ -104,48 +121,26 @@ fn add(todo: String, conn: Connection) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn rm(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let target = find_target(id, &conn).unwrap();
-  conn.execute("delete from todos where id is ?1", (target,))?;
-  println!("Removed todo: {}", id);
+fn rm(conn: Connection) -> Result<(), Box<dyn Error>> {
+  let target = fuzzy_find(&conn).unwrap();
+  conn.execute("delete from todos where body is ?1", (&target,))?;
+  println!("Removed todo: {}", target);
   Ok(())
 }
 
 fn toggle(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let mut stmt = conn.prepare("SELECT * FROM todos;")?;
-  let todos = stmt
-    .query_map([], |row| {
-      Ok(Todo {
-        id: row.get(0)?,
-        body: row.get(1)?,
-        incomplete: row.get(2)?,
-      })
-    })?
-    .collect::<Vec<Result<Todo>>>();
-
-  let target = todos[id - 1].as_ref().unwrap();
+  let target = find_target(id, &conn).unwrap();
   let flipped = if target.incomplete { false } else { true };
   conn.execute(
     "UPDATE todos SET incomplete = ?1 where id is ?2",
     (flipped, target.id),
   )?;
-  println!("Done: {}", id);
+  println!("Toggled: {}", target.body);
   Ok(())
 }
 
 fn edit(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let mut stmt = conn.prepare("SELECT * FROM todos;")?;
-  let todos = stmt
-    .query_map([], |row| {
-      Ok(Todo {
-        id: row.get(0)?,
-        body: row.get(1)?,
-        incomplete: row.get(2)?,
-      })
-    })?
-    .collect::<Vec<Result<Todo>>>();
-
-  let target = todos[id - 1].as_ref().unwrap();
+  let target = find_target(id, &conn).unwrap();
   let prompt = format!("Change from '{}': ", (target.body));
   let new: String = Input::with_theme(&ColorfulTheme::default())
     .with_prompt(prompt)
@@ -156,7 +151,7 @@ fn edit(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
     "UPDATE todos SET body = ?1 where id is ?2",
     (new, target.id),
   )?;
-  println!("Updated: {}", id);
+  println!("Updated: {}", target.body);
   Ok(())
 }
 
