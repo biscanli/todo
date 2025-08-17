@@ -14,3 +14,10 @@ This todo app is meant to be a Rust language learning experience.
 - [X] Add flake.nix
 - [ ] Add simple configuration file and a central todo path
 - [ ] Bonus: Add a tui
+
+* Dependencies
+Check out these amazing packages:
+- [[https://crates.io/crates/clap][clap]] for command line argument parsing
+- [[https://crates.io/crates/console][console]] for the +strikethrough+ effect
+- [[https://crates.io/crates/dialoguer][dialoguer]] for fancy input parsing
+- [[https://crates.io/crates/rusqlite][rusqlite]] and [[https://sqlite.org/index.html][sqlite]] for database backend
