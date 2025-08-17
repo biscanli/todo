@@ -48,17 +48,11 @@ enum Commands {
 }
 
 pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
+  // Create connection to db
   let conn = Connection::open("todos.db")?;
 
-  // Create table if it doesn't exist
-  conn.execute(
-    "CREATE TABLE IF NOT EXISTS todos (
-            id          INTEGER PRIMARY KEY,
-            body        TEXT NOT NULL,
-            incomplete  BOOL
-        )",
-    (), // empty list of parameters.
-  )?;
+  // Setup db system
+  create_db(&conn)?;
 
   // Parse the args
   match &args.command {
@@ -69,6 +63,19 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
     Some(Commands::List { incomplete: all }) => list(*all, conn)?,
     _ => {}
   }
+
+  Ok(())
+}
+
+fn create_db(conn: &Connection) -> Result<(), Box<dyn Error>> {
+  conn.execute(
+    "CREATE TABLE IF NOT EXISTS todos (
+            id          INTEGER PRIMARY KEY,
+            body        TEXT NOT NULL,
+            incomplete  BOOL
+        )",
+    (), // empty list of parameters.
+  )?;
 
   Ok(())
 }
