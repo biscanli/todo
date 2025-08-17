@@ -1,7 +1,9 @@
-* Features [5/6]
+* TODO Features [5/8]
 - [X] Add, remove, list
 - [X] Check todo
 - [X] Toggle (check/uncheck)
 - [X] Edit
 - [X] Add interactive remove
-- [ ] Add extra args to list
+- [ ] Centralize all interactive bits at =run= function
+- [ ] Add tests
+- [ ] Use in memory sqlite db
