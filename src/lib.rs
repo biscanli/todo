@@ -72,8 +72,8 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn collect_todos(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
-  let mut stmt = conn.prepare("SELECT * FROM todos;")?;
+fn collect_todos(query: String, conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
+  let mut stmt = conn.prepare(&query)?;
   let todos = stmt
     .query_map([], |row| {
       Ok(Todo {
@@ -90,8 +90,16 @@ fn collect_todos(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
   Ok(todos.clone())
 }
 
+fn collect_todos_all(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
+  collect_todos("SELECT * FROM todos;".to_string(), &conn)
+}
+
+fn collect_todos_incomplete(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
+  collect_todos("SELECT * FROM todos where incomplete;".to_string(), &conn)
+}
+
 fn fuzzy_find(conn: &Connection) -> Result<Todo, Box<dyn Error>> {
-  let todos = collect_todos(&conn).unwrap();
+  let todos = collect_todos_all(&conn).unwrap();
   let todo_strs = todos
     .iter()
     .map(|s| s.body.clone())
@@ -151,27 +159,18 @@ fn edit(conn: Connection) -> Result<(), Box<dyn Error>> {
 }
 
 fn list(incomplete: bool, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let mut stmt = conn.prepare(if incomplete {
-    "SELECT * FROM todos where incomplete;"
+  let todos = if incomplete {
+    collect_todos_incomplete(&conn)
   } else {
-    "SELECT * FROM todos;"
-  })?;
-  let todos = stmt.query_map([], |row| {
-    Ok(Todo {
-      id: row.get(0)?,
-      body: row.get(1)?,
-      incomplete: row.get(2)?,
-    })
-  })?;
-
-  for (number, todo) in todos.enumerate() {
-    if let Ok(found_todo) = todo {
-      if found_todo.incomplete {
-        println!("{}. {}", number + 1, found_todo.body,);
-      } else {
-        let output = format!("{}. {}", number + 1, found_todo.body);
-        println!("{}", style(output).strikethrough());
-      }
+    collect_todos_all(&conn)
+  }
+  .unwrap();
+  for (number, todo) in todos.iter().enumerate() {
+    if todo.incomplete {
+      println!("{}. {}", number + 1, todo.body,);
+    } else {
+      let output = format!("{}. {}", number + 1, todo.body);
+      println!("{}", style(output).strikethrough());
     }
   }
   Ok(())
