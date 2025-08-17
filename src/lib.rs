@@ -1,8 +1,9 @@
 use clap::Parser;
 use clap::Subcommand;
 use console::style;
+use dialoguer::Editor;
 use dialoguer::MultiSelect;
-use dialoguer::{theme::ColorfulTheme, FuzzySelect, Input};
+use dialoguer::{theme::ColorfulTheme, FuzzySelect};
 use rusqlite::{Connection, Result};
 use std::error::Error;
 
@@ -173,11 +174,7 @@ fn toggle(conn: Connection) -> Result<(), Box<dyn Error>> {
 
 fn edit(conn: Connection) -> Result<(), Box<dyn Error>> {
   let target = fuzzy_find(&conn).unwrap();
-  let prompt = format!("Change from '{}': ", (target.body));
-  let new: String = Input::with_theme(&ColorfulTheme::default())
-    .with_prompt(prompt)
-    .interact_text()
-    .unwrap();
+  let new = Editor::new().edit(&target.body).unwrap().unwrap();
 
   conn.execute(
     "UPDATE todos SET body = ?1 where id is ?2",
