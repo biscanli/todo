@@ -1,6 +1,7 @@
 use clap::Parser;
 use clap::Subcommand;
 use console::style;
+use dialoguer::MultiSelect;
 use dialoguer::{theme::ColorfulTheme, FuzzySelect, Input};
 use rusqlite::{Connection, Result};
 use std::error::Error;
@@ -26,7 +27,7 @@ enum Commands {
   Add {
     // TODO: Make it a list
     /// The todo to add
-    body: String,
+    todos: Vec<String>,
   },
 
   /// Remove todo
@@ -61,7 +62,7 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
 
   // Parse the args
   match &args.command {
-    Some(Commands::Add { body }) => add(body.to_string(), conn)?,
+    Some(Commands::Add { todos }) => add(todos.to_vec(), conn)?,
     Some(Commands::Rm {}) => rm(conn)?,
     Some(Commands::Toggle {}) => toggle(conn)?,
     Some(Commands::Edit {}) => edit(conn)?,
@@ -115,30 +116,58 @@ fn fuzzy_find(conn: &Connection) -> Result<Todo, Box<dyn Error>> {
   Ok(todos[target_id].clone())
 }
 
-fn add(todo: String, conn: Connection) -> Result<(), Box<dyn Error>> {
-  conn.execute(
-    "INSERT INTO todos (body, incomplete) VALUES (?1, true)",
-    (&todo,),
-  )?;
-  println!("Added: {}", todo);
+fn multi_find(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
+  let todos = collect_todos_all(&conn).unwrap();
+  let todo_strs = todos
+    .iter()
+    .map(|s| s.body.clone())
+    .collect::<Vec<String>>();
+
+  let target_ids = MultiSelect::with_theme(&ColorfulTheme::default())
+    .with_prompt("Which one to erase?")
+    .items(&todo_strs[..])
+    .interact()
+    .unwrap();
+
+  // Direct indexing (unsafe if indices could be out of bounds)
+  let todos_selected: Vec<_> = target_ids
+    .iter()
+    .map(|&i| todos[i].clone()) // Direct access
+    .collect();
+
+  Ok(todos_selected.clone())
+}
+
+fn add(todos: Vec<String>, conn: Connection) -> Result<(), Box<dyn Error>> {
+  for todo in todos {
+    conn.execute(
+      "INSERT INTO todos (body, incomplete) VALUES (?1, true)",
+      (&todo,),
+    )?;
+    println!("Added: {}", todo);
+  }
   Ok(())
 }
 
 fn rm(conn: Connection) -> Result<(), Box<dyn Error>> {
-  let target = fuzzy_find(&conn).unwrap().body;
-  conn.execute("delete from todos where body is ?1", (&target,))?;
-  println!("Removed todo: {}", target);
+  let targets = multi_find(&conn).unwrap();
+  for target in targets {
+    conn.execute("delete from todos where body is ?1", (&target.body,))?;
+    println!("Removed todo: {}", target.body);
+  }
   Ok(())
 }
 
 fn toggle(conn: Connection) -> Result<(), Box<dyn Error>> {
-  let target = fuzzy_find(&conn).unwrap();
-  let flipped = if target.incomplete { false } else { true };
-  conn.execute(
-    "UPDATE todos SET incomplete = ?1 where id is ?2",
-    (flipped, target.id),
-  )?;
-  println!("Toggled: {}", target.body);
+  let targets = multi_find(&conn).unwrap();
+  for target in targets {
+    let flipped = if target.incomplete { false } else { true };
+    conn.execute(
+      "UPDATE todos SET incomplete = ?1 where id is ?2",
+      (flipped, target.id),
+    )?;
+    println!("Toggled: {}", target.body);
+  }
   Ok(())
 }
 
