@@ -95,7 +95,7 @@ fn collect_todos(query: String, conn: &Connection) -> Result<Vec<Todo>, Box<dyn 
     .map(|s| s.unwrap())
     .collect::<Vec<Todo>>();
 
-  Ok(todos.clone())
+  Ok(todos)
 }
 
 fn collect_todos_all(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
@@ -108,10 +108,7 @@ fn collect_todos_incomplete(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Erro
 
 fn fuzzy_find(conn: &Connection) -> Result<Todo, Box<dyn Error>> {
   let todos = collect_todos_all(&conn).unwrap();
-  let todo_strs = todos
-    .iter()
-    .map(|s| s.body.clone())
-    .collect::<Vec<String>>();
+  let todo_strs = todos.iter().map(|s| &s.body).collect::<Vec<&String>>();
 
   let target_id = FuzzySelect::with_theme(&ColorfulTheme::default())
     .with_prompt("Which one to erase?")
@@ -125,10 +122,7 @@ fn fuzzy_find(conn: &Connection) -> Result<Todo, Box<dyn Error>> {
 
 fn multi_find(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
   let todos = collect_todos_all(&conn).unwrap();
-  let todo_strs = todos
-    .iter()
-    .map(|s| s.body.clone())
-    .collect::<Vec<String>>();
+  let todo_strs = todos.iter().map(|s| &s.body).collect::<Vec<&String>>();
 
   let target_ids = MultiSelect::with_theme(&ColorfulTheme::default())
     .with_prompt("Which one to erase?")
