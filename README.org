@@ -2,7 +2,7 @@
 
 This todo app is meant to be a Rust language learning experience.
 
-* TODO Features [8/12]
+* TODO Features [9/11]
 - [X] Add, remove, list
 - [X] Check todo
 - [X] Toggle (check/uncheck)
@@ -11,6 +11,6 @@ This todo app is meant to be a Rust language learning experience.
 - [X] Centralize all interactive bits at =run= function
 - [X] Add tests
 - [X] Use in memory sqlite db
-- [ ] Add flake.nix
+- [X] Add flake.nix
 - [ ] Add simple configuration file and a central todo path
 - [ ] Bonus: Add a tui
