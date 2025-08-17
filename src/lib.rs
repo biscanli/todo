@@ -33,16 +33,10 @@ enum Commands {
   Rm {},
 
   /// Edit todo
-  Edit {
-    // The todo number to remove
-    id: usize,
-  },
+  Edit {},
 
   /// Check a todo app
-  Toggle {
-    // The todo number to remove
-    id: usize,
-  },
+  Toggle {},
 
   /// List todos
   List {
@@ -69,8 +63,8 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
   match &args.command {
     Some(Commands::Add { body }) => add(body.to_string(), conn)?,
     Some(Commands::Rm {}) => rm(conn)?,
-    Some(Commands::Toggle { id }) => toggle(*id, conn)?,
-    Some(Commands::Edit { id }) => edit(*id, conn)?,
+    Some(Commands::Toggle {}) => toggle(conn)?,
+    Some(Commands::Edit {}) => edit(conn)?,
     Some(Commands::List { incomplete: all }) => list(*all, conn)?,
     _ => {}
   }
@@ -78,7 +72,7 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn find_target(id: usize, conn: &Connection) -> Result<Todo, Box<dyn Error>> {
+fn collect_todos(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
   let mut stmt = conn.prepare("SELECT * FROM todos;")?;
   let todos = stmt
     .query_map([], |row| {
@@ -88,24 +82,25 @@ fn find_target(id: usize, conn: &Connection) -> Result<Todo, Box<dyn Error>> {
         incomplete: row.get(2)?,
       })
     })?
-    .collect::<Vec<Result<Todo>>>();
-
-  Ok(todos[id - 1].as_ref().unwrap().clone())
-}
-
-fn fuzzy_find(conn: &Connection) -> Result<String, Box<dyn Error>> {
-  let mut stmt = conn.prepare("SELECT * FROM todos;")?;
-  let todos = stmt
-    .query_map([], |row| Ok(row.get(1)?))?
     .into_iter()
     .filter(|s| s.is_ok())
     .map(|s| s.unwrap())
+    .collect::<Vec<Todo>>();
+
+  Ok(todos.clone())
+}
+
+fn fuzzy_find(conn: &Connection) -> Result<Todo, Box<dyn Error>> {
+  let todos = collect_todos(&conn).unwrap();
+  let todo_strs = todos
+    .iter()
+    .map(|s| s.body.clone())
     .collect::<Vec<String>>();
 
   let target_id = FuzzySelect::with_theme(&ColorfulTheme::default())
     .with_prompt("Which one to erase?")
     .default(0)
-    .items(&todos[..])
+    .items(&todo_strs[..])
     .interact()
     .unwrap();
 
@@ -122,14 +117,14 @@ fn add(todo: String, conn: Connection) -> Result<(), Box<dyn Error>> {
 }
 
 fn rm(conn: Connection) -> Result<(), Box<dyn Error>> {
-  let target = fuzzy_find(&conn).unwrap();
+  let target = fuzzy_find(&conn).unwrap().body;
   conn.execute("delete from todos where body is ?1", (&target,))?;
   println!("Removed todo: {}", target);
   Ok(())
 }
 
-fn toggle(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let target = find_target(id, &conn).unwrap();
+fn toggle(conn: Connection) -> Result<(), Box<dyn Error>> {
+  let target = fuzzy_find(&conn).unwrap();
   let flipped = if target.incomplete { false } else { true };
   conn.execute(
     "UPDATE todos SET incomplete = ?1 where id is ?2",
@@ -139,8 +134,8 @@ fn toggle(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn edit(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let target = find_target(id, &conn).unwrap();
+fn edit(conn: Connection) -> Result<(), Box<dyn Error>> {
+  let target = fuzzy_find(&conn).unwrap();
   let prompt = format!("Change from '{}': ", (target.body));
   let new: String = Input::with_theme(&ColorfulTheme::default())
     .with_prompt(prompt)
@@ -149,9 +144,9 @@ fn edit(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
 
   conn.execute(
     "UPDATE todos SET body = ?1 where id is ?2",
-    (new, target.id),
+    (&new, target.id),
   )?;
-  println!("Updated: {}", target.body);
+  println!("Updated to: {}", new);
   Ok(())
 }
 
