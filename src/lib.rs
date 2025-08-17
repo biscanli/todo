@@ -141,12 +141,15 @@ fn multi_find(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
 
 fn add(todos: Vec<String>, conn: Connection) -> Result<(), Box<dyn Error>> {
   if todos.is_empty() {
-    let new = Editor::new().edit("").unwrap().unwrap();
-    conn.execute(
-      "INSERT INTO todos (body, incomplete) VALUES (?1, true)",
-      (&new,),
-    )?;
-    println!("Added: {}", new);
+    if let Some(new) = Editor::new().edit("").expect("Editor had issues!") {
+      conn.execute(
+        "INSERT INTO todos (body, incomplete) VALUES (?1, true)",
+        (&new,),
+      )?;
+      println!("Added: {}", new);
+    } else {
+      println!("Nothing added!");
+    }
   } else {
     for todo in todos {
       conn.execute(
@@ -160,7 +163,10 @@ fn add(todos: Vec<String>, conn: Connection) -> Result<(), Box<dyn Error>> {
 }
 
 fn rm(conn: Connection) -> Result<(), Box<dyn Error>> {
-  let targets = multi_find(&conn).unwrap();
+  let targets = match multi_find(&conn) {
+    Ok(result) => result,
+    _ => panic!("Something went wrong with selection!"),
+  };
   for target in targets {
     conn.execute("delete from todos where body is ?1", (&target.body,))?;
     println!("Removed todo: {}", target.body);
@@ -169,7 +175,10 @@ fn rm(conn: Connection) -> Result<(), Box<dyn Error>> {
 }
 
 fn toggle(conn: Connection) -> Result<(), Box<dyn Error>> {
-  let targets = multi_find(&conn).unwrap();
+  let targets = match multi_find(&conn) {
+    Ok(result) => result,
+    _ => panic!("Something went wrong with selection!"),
+  };
   for target in targets {
     let flipped = if target.incomplete { false } else { true };
     conn.execute(
@@ -182,31 +191,41 @@ fn toggle(conn: Connection) -> Result<(), Box<dyn Error>> {
 }
 
 fn edit(conn: Connection) -> Result<(), Box<dyn Error>> {
-  let target = fuzzy_find(&conn).unwrap();
-  let new = Editor::new().edit(&target.body).unwrap().unwrap();
-
-  conn.execute(
-    "UPDATE todos SET body = ?1 where id is ?2",
-    (&new, target.id),
-  )?;
-  println!("Updated to: {}", new);
+  let target = match fuzzy_find(&conn) {
+    Ok(result) => result,
+    _ => panic!("Something went wrong with selection!"),
+  };
+  if let Some(new) = Editor::new()
+    .edit(&target.body)
+    .expect("Editor had issues!")
+  {
+    conn.execute(
+      "UPDATE todos SET body = ?1 where id is ?2",
+      (&new, target.id),
+    )?;
+    println!("Updated to: {}", new);
+  } else {
+    println!("Empty todo is not acceptable!");
+  }
   Ok(())
 }
 
 fn list(incomplete: bool, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let todos = if incomplete {
+  if let Ok(todos) = if incomplete {
     collect_todos_incomplete(&conn)
   } else {
     collect_todos_all(&conn)
-  }
-  .unwrap();
-  for (number, todo) in todos.iter().enumerate() {
-    if todo.incomplete {
-      println!("{}. {}", number + 1, todo.body,);
-    } else {
-      let output = format!("{}. {}", number + 1, todo.body);
-      println!("{}", style(output).strikethrough());
+  } {
+    for (number, todo) in todos.iter().enumerate() {
+      if todo.incomplete {
+        println!("{}. {}", number + 1, todo.body,);
+      } else {
+        let output = format!("{}. {}", number + 1, todo.body);
+        println!("{}", style(output).strikethrough());
+      }
     }
+  } else {
+    println!("Something went wrong with collecting!");
   }
   Ok(())
 }
