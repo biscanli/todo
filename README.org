@@ -1,9 +1,16 @@
-* TODO Features [5/8]
+#+title: Simple todo app in cli with rust
+
+This todo app is meant to be a Rust language learning experience.
+
+* TODO Features [8/12]
 - [X] Add, remove, list
 - [X] Check todo
 - [X] Toggle (check/uncheck)
 - [X] Edit
 - [X] Add interactive remove
-- [ ] Centralize all interactive bits at =run= function
-- [ ] Add tests
-- [ ] Use in memory sqlite db
+- [X] Centralize all interactive bits at =run= function
+- [X] Add tests
+- [X] Use in memory sqlite db
+- [ ] Add flake.nix
+- [ ] Add simple configuration file and a central todo path
+- [ ] Bonus: Add a tui

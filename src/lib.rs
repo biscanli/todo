@@ -23,7 +23,7 @@ impl PartialEq for Todo {
 /// Simple todo app
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
-#[command(arg_required_else_help(true))] // TODO: Remove when adding tui
+#[command(arg_required_else_help(true))] // TODO: Remove if tui is added
 pub struct Args {
   #[command(subcommand)]
   command: Option<Commands>,
