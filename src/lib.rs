@@ -26,7 +26,6 @@ pub struct Args {
 enum Commands {
   /// Add todo
   Add {
-    // TODO: Make it a list
     /// The todo to add
     todos: Vec<String>,
   },
@@ -140,12 +139,21 @@ fn multi_find(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
 }
 
 fn add(todos: Vec<String>, conn: Connection) -> Result<(), Box<dyn Error>> {
-  for todo in todos {
+  if todos.is_empty() {
+    let new = Editor::new().edit("").unwrap().unwrap();
     conn.execute(
       "INSERT INTO todos (body, incomplete) VALUES (?1, true)",
-      (&todo,),
+      (&new,),
     )?;
-    println!("Added: {}", todo);
+    println!("Added: {}", new);
+  } else {
+    for todo in todos {
+      conn.execute(
+        "INSERT INTO todos (body, incomplete) VALUES (?1, true)",
+        (&todo,),
+      )?;
+      println!("Added: {}", todo);
+    }
   }
   Ok(())
 }
