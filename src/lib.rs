@@ -96,6 +96,7 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
       }
     }
     Some(Commands::List { incomplete: all }) => list(*all, conn)?,
+    Some(Commands::Clean {}) => clean(conn)?,
     _ => {}
   }
 
@@ -245,6 +246,12 @@ fn list(incomplete: bool, conn: Connection) -> Result<(), Box<dyn Error>> {
   } else {
     println!("Something went wrong with collecting!");
   }
+  Ok(())
+}
+
+fn clean(conn: Connection) -> Result<(), Box<dyn Error>> {
+  conn.execute("DELETE FROM todos WHERE incomplete is false", ())?;
+  println!("Removed all completed todo items!");
   Ok(())
 }
 
