@@ -31,27 +31,30 @@ pub struct Args {
 
 #[derive(Subcommand)]
 enum Commands {
-  /// Add todo
+  /// Add one or more todo items
   Add {
     /// The todo to add
     todos: Vec<String>,
   },
 
-  /// Remove todo
+  /// Remove one or more todo items
   Rm {},
 
-  /// Edit todo
+  /// Edit a todo item
   Edit {},
 
-  /// Check a todo app
+  /// Toggle the completion state of a todo
   Toggle {},
 
-  /// List todos
+  /// List todo items
   List {
     /// Show only incomplete items
     #[arg(short, long)]
     incomplete: bool,
   },
+
+  /// Remove all completed items
+  Clean {},
 }
 
 pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
