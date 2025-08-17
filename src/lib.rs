@@ -1,11 +1,12 @@
 use clap::Parser;
 use clap::Subcommand;
+use console::style;
 use rusqlite::{Connection, Result};
 use std::error::Error;
 
 struct Todo {
-  id: usize,
   body: String,
+  id: usize,
   incomplete: bool,
 }
 
@@ -13,9 +14,6 @@ struct Todo {
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub struct Args {
-  // /// do not ignore entries starting with "."
-  // #[arg(short, long)]
-  // pub all: bool,
   #[command(subcommand)]
   command: Option<Commands>,
 }
@@ -39,19 +37,22 @@ enum Commands {
   Edit {
     // The todo number to remove
     id: usize,
+
+    // The new string to replace with
+    new: String,
   },
 
   /// Check a todo app
-  Check {
+  Toggle {
     // The todo number to remove
     id: usize,
   },
 
   /// List todos
   List {
-    /// do not ignore entries starting with "."
+    /// Show only incomplete items
     #[arg(short, long)]
-    all: bool,
+    incomplete: bool,
   },
 }
 
@@ -72,8 +73,9 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
   match &args.command {
     Some(Commands::Add { body }) => add(body.to_string(), conn)?,
     Some(Commands::Rm { id }) => rm(*id, conn)?,
-    Some(Commands::Check { id }) => check(*id, conn)?,
-    Some(Commands::List { all }) => list(*all, conn)?,
+    Some(Commands::Toggle { id }) => toggle(*id, conn)?,
+    Some(Commands::Edit { id, new }) => edit(*id, new.to_string(), conn)?,
+    Some(Commands::List { incomplete: all }) => list(*all, conn)?,
     _ => {}
   }
 
@@ -111,21 +113,40 @@ fn rm(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn check(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let target = find_target(id, &conn).unwrap();
+fn toggle(id: usize, conn: Connection) -> Result<(), Box<dyn Error>> {
+  let mut stmt = conn.prepare("SELECT * FROM todos;")?;
+  let todos = stmt
+    .query_map([], |row| {
+      Ok(Todo {
+        id: row.get(0)?,
+        body: row.get(1)?,
+        incomplete: row.get(2)?,
+      })
+    })?
+    .collect::<Vec<Result<Todo>>>();
+
+  let target = todos[id - 1].as_ref().unwrap();
+  let flipped = if target.incomplete { false } else { true };
   conn.execute(
-    "UPDATE todos SET incomplete = false where id is ?1",
-    (target,),
+    "UPDATE todos SET incomplete = ?1 where id is ?2",
+    (flipped, target.id),
   )?;
   println!("Done: {}", id);
   Ok(())
 }
 
-fn list(all: bool, conn: Connection) -> Result<(), Box<dyn Error>> {
-  let mut stmt = conn.prepare(if all {
-    "SELECT * FROM todos;"
-  } else {
+fn edit(id: usize, new: String, conn: Connection) -> Result<(), Box<dyn Error>> {
+  let target = find_target(id, &conn).unwrap();
+  conn.execute("UPDATE todos SET body = ?1 where id is ?2", (new, target))?;
+  println!("Updated: {}", id);
+  Ok(())
+}
+
+fn list(incomplete: bool, conn: Connection) -> Result<(), Box<dyn Error>> {
+  let mut stmt = conn.prepare(if incomplete {
     "SELECT * FROM todos where incomplete;"
+  } else {
+    "SELECT * FROM todos;"
   })?;
   let todos = stmt.query_map([], |row| {
     Ok(Todo {
@@ -135,10 +156,14 @@ fn list(all: bool, conn: Connection) -> Result<(), Box<dyn Error>> {
     })
   })?;
 
-  println!("Things you still need to do:");
   for (number, todo) in todos.enumerate() {
     if let Ok(found_todo) = todo {
-      println!("{}. {}", number + 1, found_todo.body,);
+      if found_todo.incomplete {
+        println!("{}. {}", number + 1, found_todo.body,);
+      } else {
+        let output = format!("{}. {}", number + 1, found_todo.body);
+        println!("{}", style(output).strikethrough());
+      }
     }
   }
   Ok(())
