@@ -125,7 +125,7 @@ fn multi_find(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
   let todo_strs = todos.iter().map(|s| &s.body).collect::<Vec<&String>>();
 
   let target_ids = MultiSelect::with_theme(&ColorfulTheme::default())
-    .with_prompt("Which one to erase?")
+    .with_prompt("Which one to edit?")
     .items(&todo_strs[..])
     .interact()
     .unwrap();
