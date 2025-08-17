@@ -7,11 +7,17 @@ use dialoguer::{theme::ColorfulTheme, FuzzySelect};
 use rusqlite::{Connection, Result};
 use std::error::Error;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Todo {
   body: String,
   id: usize,
   incomplete: bool,
+}
+
+impl PartialEq for Todo {
+  fn eq(&self, other: &Self) -> bool {
+    (self.id == other.id) && (self.body == other.body) && (self.incomplete == other.incomplete)
+  }
 }
 
 /// Simple todo app
@@ -57,20 +63,20 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
 
   // Parse the args
   match &args.command {
-    Some(Commands::Add { todos }) => add(todos.to_vec(), conn)?,
+    Some(Commands::Add { todos }) => add(todos.to_vec(), &conn)?,
     Some(Commands::Rm {}) => {
       let targets = match multi_find(&conn) {
         Ok(result) => result,
         _ => panic!("Something went wrong with selection!"),
       };
-      rm(targets, conn)?;
+      rm(targets, &conn)?;
     }
     Some(Commands::Toggle {}) => {
       let targets = match multi_find(&conn) {
         Ok(result) => result,
         _ => panic!("Something went wrong with selection!"),
       };
-      toggle(targets, conn)?;
+      toggle(targets, &conn)?;
     }
     Some(Commands::Edit {}) => {
       let target = match fuzzy_find(&conn) {
@@ -81,7 +87,7 @@ pub fn run(args: Args) -> Result<(), Box<dyn Error>> {
         .edit(&target.body)
         .expect("Editor had issues!")
       {
-        edit(target, new, conn)?;
+        edit(target, new, &conn)?;
       } else {
         println!("Empty todo is not acceptable!");
       }
@@ -165,8 +171,9 @@ fn multi_find(conn: &Connection) -> Result<Vec<Todo>, Box<dyn Error>> {
   Ok(todos_selected.clone())
 }
 
-fn add(todos: Vec<String>, conn: Connection) -> Result<(), Box<dyn Error>> {
+fn add(todos: Vec<String>, conn: &Connection) -> Result<(), Box<dyn Error>> {
   if todos.is_empty() {
+    // Untested segment starts, this part needs interactivity
     if let Some(new) = Editor::new().edit("").expect("Editor had issues!") {
       conn.execute(
         "INSERT INTO todos (body, incomplete) VALUES (?1, true)",
@@ -176,6 +183,7 @@ fn add(todos: Vec<String>, conn: Connection) -> Result<(), Box<dyn Error>> {
     } else {
       println!("Nothing added!");
     }
+    // Untested segment ends
   } else {
     for todo in todos {
       conn.execute(
@@ -188,7 +196,7 @@ fn add(todos: Vec<String>, conn: Connection) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn rm(targets: Vec<Todo>, conn: Connection) -> Result<(), Box<dyn Error>> {
+fn rm(targets: Vec<Todo>, conn: &Connection) -> Result<(), Box<dyn Error>> {
   for target in targets {
     conn.execute("delete from todos where body is ?1", (&target.body,))?;
     println!("Removed todo: {}", target.body);
@@ -196,7 +204,16 @@ fn rm(targets: Vec<Todo>, conn: Connection) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn toggle(targets: Vec<Todo>, conn: Connection) -> Result<(), Box<dyn Error>> {
+fn edit(target: Todo, new: String, conn: &Connection) -> Result<(), Box<dyn Error>> {
+  conn.execute(
+    "UPDATE todos SET body = ?1 where id is ?2",
+    (&new, target.id),
+  )?;
+  println!("Updated to: {}", new);
+  Ok(())
+}
+
+fn toggle(targets: Vec<Todo>, conn: &Connection) -> Result<(), Box<dyn Error>> {
   for target in targets {
     let flipped = if target.incomplete { false } else { true };
     conn.execute(
@@ -205,15 +222,6 @@ fn toggle(targets: Vec<Todo>, conn: Connection) -> Result<(), Box<dyn Error>> {
     )?;
     println!("Toggled: {}", target.body);
   }
-  Ok(())
-}
-
-fn edit(target: Todo, new: String, conn: Connection) -> Result<(), Box<dyn Error>> {
-  conn.execute(
-    "UPDATE todos SET body = ?1 where id is ?2",
-    (&new, target.id),
-  )?;
-  println!("Updated to: {}", new);
   Ok(())
 }
 
@@ -235,4 +243,295 @@ fn list(incomplete: bool, conn: Connection) -> Result<(), Box<dyn Error>> {
     println!("Something went wrong with collecting!");
   }
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn collect_todos_all_empty() {
+    let conn = Connection::open_in_memory().unwrap();
+    _ = create_db(&conn);
+    let todos = collect_todos_all(&conn).unwrap();
+    let compare: Vec<Todo> = vec![];
+    assert_eq!(compare, todos);
+  }
+
+  #[test]
+  fn collect_todos_all_one() {
+    // Prepare db connection
+    let conn = Connection::open_in_memory().unwrap();
+    _ = create_db(&conn);
+
+    // Populate
+    _ = conn.execute(
+      "INSERT INTO todos (body, incomplete) VALUES (?1, true)",
+      ("Milk".to_string(),),
+    );
+
+    // Test function
+    let todos = collect_todos_all(&conn).unwrap();
+
+    // Assert
+    assert_eq!(
+      vec![Todo {
+        id: 1,
+        body: "Milk".to_string(),
+        incomplete: true
+      }],
+      todos
+    );
+  }
+  #[test]
+  fn collect_todos_all_multi() {
+    let conn = Connection::open_in_memory().unwrap();
+    _ = create_db(&conn);
+    _ = conn.execute(
+      "INSERT INTO todos (body, incomplete) VALUES (?1, true)",
+      ("Milk".to_string(),),
+    );
+    _ = conn.execute(
+      "INSERT INTO todos (body, incomplete) VALUES (?1, true)",
+      ("Carl".to_string(),),
+    );
+    let todos = collect_todos_all(&conn).unwrap();
+    assert_eq!(
+      vec![
+        Todo {
+          id: 1,
+          body: "Milk".to_string(),
+          incomplete: true
+        },
+        Todo {
+          id: 2,
+          body: "Carl".to_string(),
+          incomplete: true
+        }
+      ],
+      todos
+    );
+  }
+  #[test]
+  fn add_one() {
+    // Prepare db connection
+    let conn = Connection::open_in_memory().unwrap();
+    _ = create_db(&conn);
+
+    // Test function
+    _ = add(vec!["Milk".to_string()], &conn);
+
+    // Collect
+    let todos = collect_todos_all(&conn).unwrap();
+
+    // Assert
+    assert_eq!(
+      vec![Todo {
+        id: 1,
+        body: "Milk".to_string(),
+        incomplete: true
+      }],
+      todos
+    );
+  }
+  #[test]
+  fn add_multi() {
+    let conn = Connection::open_in_memory().unwrap();
+    _ = create_db(&conn);
+    _ = add(vec!["Milk".to_string(), "Carl".to_string()], &conn);
+
+    let todos = collect_todos_all(&conn).unwrap();
+    assert_eq!(
+      vec![
+        Todo {
+          id: 1,
+          body: "Milk".to_string(),
+          incomplete: true
+        },
+        Todo {
+          id: 2,
+          body: "Carl".to_string(),
+          incomplete: true
+        }
+      ],
+      todos
+    );
+  }
+  #[test]
+  fn rm_one() {
+    // Prepare db connection
+    let conn = Connection::open_in_memory().unwrap();
+    _ = create_db(&conn);
+
+    // Populate
+    _ = add(vec!["Milk".to_string(), "Carl".to_string()], &conn);
+
+    // Test function
+    _ = rm(
+      vec![Todo {
+        id: 1,
+        body: "Milk".to_string(),
+        incomplete: true,
+      }],
+      &conn,
+    );
+    let todos = collect_todos_all(&conn).unwrap();
+
+    // Assert
+    assert_eq!(
+      vec![Todo {
+        id: 2,
+        body: "Carl".to_string(),
+        incomplete: true
+      }],
+      todos
+    );
+  }
+  #[test]
+  fn rm_multi() {
+    let conn = Connection::open_in_memory().unwrap();
+    _ = create_db(&conn);
+    _ = add(
+      vec!["Milk".to_string(), "Carl".to_string(), "Katia".to_string()],
+      &conn,
+    );
+
+    _ = rm(
+      vec![
+        Todo {
+          id: 1,
+          body: "Milk".to_string(),
+          incomplete: true,
+        },
+        Todo {
+          id: 3,
+          body: "Katia".to_string(),
+          incomplete: true,
+        },
+      ],
+      &conn,
+    );
+    let todos = collect_todos_all(&conn).unwrap();
+    assert_eq!(
+      vec![Todo {
+        id: 2,
+        body: "Carl".to_string(),
+        incomplete: true
+      }],
+      todos
+    );
+  }
+  #[test]
+  fn edit_test() {
+    // Prepare db connection
+    let conn = Connection::open_in_memory().unwrap();
+    _ = create_db(&conn);
+
+    // Populate
+    _ = add(vec!["Milk".to_string(), "Carl".to_string()], &conn);
+
+    // Test function
+    _ = edit(
+      Todo {
+        id: 1,
+        body: "Milk".to_string(),
+        incomplete: true,
+      },
+      "Baptise".to_string(),
+      &conn,
+    );
+    let todos = collect_todos_all(&conn).unwrap();
+
+    // Assert
+    assert_eq!(
+      vec![
+        Todo {
+          id: 1,
+          body: "Baptise".to_string(),
+          incomplete: true,
+        },
+        Todo {
+          id: 2,
+          body: "Carl".to_string(),
+          incomplete: true
+        }
+      ],
+      todos
+    );
+  }
+  #[test]
+  fn toggle_one() {
+    // Prepare db connection
+    let conn = Connection::open_in_memory().unwrap();
+    _ = create_db(&conn);
+
+    // Populate
+    _ = add(vec!["Milk".to_string(), "Carl".to_string()], &conn);
+
+    // Test function
+    _ = toggle(
+      vec![Todo {
+        id: 1,
+        body: "Milk".to_string(),
+        incomplete: true,
+      }],
+      &conn,
+    );
+    let todos = collect_todos_all(&conn).unwrap();
+
+    // Assert
+    assert_eq!(
+      vec![
+        Todo {
+          id: 1,
+          body: "Milk".to_string(),
+          incomplete: false,
+        },
+        Todo {
+          id: 2,
+          body: "Carl".to_string(),
+          incomplete: true
+        }
+      ],
+      todos
+    );
+  }
+  #[test]
+  fn toggle_multi() {
+    let conn = Connection::open_in_memory().unwrap();
+    _ = create_db(&conn);
+    _ = add(vec!["Milk".to_string(), "Carl".to_string()], &conn);
+
+    _ = toggle(
+      vec![
+        Todo {
+          id: 1,
+          body: "Milk".to_string(),
+          incomplete: true,
+        },
+        Todo {
+          id: 2,
+          body: "Katia".to_string(),
+          incomplete: true,
+        },
+      ],
+      &conn,
+    );
+    let todos = collect_todos_all(&conn).unwrap();
+    assert_eq!(
+      vec![
+        Todo {
+          id: 1,
+          body: "Milk".to_string(),
+          incomplete: false,
+        },
+        Todo {
+          id: 2,
+          body: "Carl".to_string(),
+          incomplete: false
+        }
+      ],
+      todos
+    );
+  }
 }
